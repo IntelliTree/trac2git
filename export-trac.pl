@@ -7,7 +7,7 @@ use JSON;
 use DateTime;
 use Carp;
 package DateTime;
-sub TO_JSON { my $d= shift; "$d" }
+sub TO_JSON { my $d= shift; $d.'Z' }
 package main;
 my $anonymize= 0;
 
@@ -23,7 +23,7 @@ my @issues= map { ticket_to_issue($_) } @{ load_trac_tickets() };
 #	'DateTime' => sub { my $date= ''.shift; p $date; },
 #};
 #p $issues[245];
-print JSON->new->allow_blessed->convert_blessed->encode(\@issues)."\n";
+print JSON->new->ascii->allow_blessed->convert_blessed->encode(\@issues)."\n";
 
 sub slurp {
 	my $name= shift;
@@ -120,8 +120,8 @@ sub changes_to_comment {
 
 	my $date= trac_time_to_utc($time)->set_time_zone('local');
 	my $date_str= $date->ymd . ' ' . $date->hms;
-	my $comment= "#### update $num on $date_str by $author ####\n\n";
-	for (grep { $_ ne 'comment' } keys %$changes) {
+	my $comment= '';#"#### update $num on $date_str by $author ####\n\n";
+	for (grep { $_ ne 'comment' && $_ ne 'description' } keys %$changes) {
 		my ($old, $new)= @{ $changes->{$_} };
 		$old= defined $old && length $old? $old : undef;
 		$new= defined $new && length $new? $new : undef;
@@ -133,11 +133,19 @@ sub changes_to_comment {
 			: defined $new? "  * **${_}** set to *${new_md}*\n"
 			: '';
 	}
+	if (defined $changes->{description}) {
+		$comment .= "  * **description** changed, old value was:\n"
+			. wiki_to_md( $changes->{description}[0] );
+		$comment .= "\n" unless substr($comment, -1) eq "\n";
+	}
 	if (defined $changes->{comment}[1]) {
 		$comment .= "\n".wiki_to_md($changes->{comment}[1]);
 	}
 	
 	$comment =~ s/[a-z]/i/gi if $anonymize;
+	
+	$comment = '(no text)'
+		unless $comment =~ /\S/;
 	return {
 		user       => remap_user($author),
 		created_at => trac_time_to_utc($time),
@@ -153,6 +161,8 @@ sub md_esc {
 
 sub wiki_to_md {
 	my $x= shift;
+	# normalize newlines
+	$x =~ s/\r\n/\n/sg;
 	# Convert code block notation
 	no warnings 'uninitialized';
 	$x =~ s/\{{3}(?:\s*#!(\w+))?/```$1/g;
