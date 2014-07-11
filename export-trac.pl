@@ -68,6 +68,8 @@ sub ticket_to_issue {
 		],
 		comments   => [],
 	};
+	$issue->{body}= "(no text)"
+		unless defined $issue->{body} and length $issue->{body};
 	my %changes;
 	my $closed_at= 0;
 	my $closed_by= undef;
